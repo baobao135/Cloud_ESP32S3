@@ -1,6 +1,5 @@
 name: Build and Deploy Edge AI Firmware
 
-# Kích hoạt pipeline khi có code mới đẩy lên nhánh main hoặc cho phép bấm chạy bằng tay
 on:
   push:
     branches: [ "main" ]
@@ -8,7 +7,7 @@ on:
 
 jobs:
   build-and-upload:
-    runs-on: ubuntu-latest # Đây chính là máy chủ "Container" ảo
+    runs-on: ubuntu-latest
 
     steps:
     - name: Lấy mã nguồn về máy chủ ảo
@@ -20,11 +19,18 @@ jobs:
         python-version: '3.10'
     - run: pip install platformio
 
-    # BƯỚC NÀY CHÚNG TA SẼ THÊM LỆNH TẢI MODEL TỪ EDGE IMPULSE SAU
+    - name: Tải Model mới nhất từ Edge Impulse
+      run: |
+        echo "Đang tải C++ library từ Edge Impulse..."
+        curl -H "x-api-key: ${{ secrets.EI_API_KEY }}" \
+             -o model.zip \
+             "https://studio.edgeimpulse.com/v1/api/${{ secrets.EI_PROJECT_ID }}/export/download?type=zip"
+        
+        # Giải nén thẳng vào thư mục lib của PlatformIO để nó tự động biên dịch
+        unzip -o model.zip -d lib/edge_impulse_model/
 
     - name: Tiến hành Biên dịch (Build)
       run: pio run 
-      # PlatformIO sẽ tự đọc file platformio.ini và build ra firmware.bin
 
     - name: Đẩy Firmware lên Azure Blob Storage
       uses: azure/CLI@v1
