@@ -1,0 +1,38 @@
+name: Build and Deploy Edge AI Firmware
+
+# Kích hoạt pipeline khi có code mới đẩy lên nhánh main hoặc cho phép bấm chạy bằng tay
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest # Đây chính là máy chủ "Container" ảo
+
+    steps:
+    - name: Lấy mã nguồn về máy chủ ảo
+      uses: actions/checkout@v3
+
+    - name: Cài đặt Python và PlatformIO Core
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - run: pip install platformio
+
+    # BƯỚC NÀY CHÚNG TA SẼ THÊM LỆNH TẢI MODEL TỪ EDGE IMPULSE SAU
+
+    - name: Tiến hành Biên dịch (Build)
+      run: pio run 
+      # PlatformIO sẽ tự đọc file platformio.ini và build ra firmware.bin
+
+    - name: Đẩy Firmware lên Azure Blob Storage
+      uses: azure/CLI@v1
+      with:
+        inlineScript: |
+          az storage blob upload \
+            --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+            --container-name firmware \
+            --file .pio/build/esp32-s3-devkitc-1/firmware.bin \
+            --name firmware.bin \
+            --overwrite true
