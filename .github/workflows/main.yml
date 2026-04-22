@@ -1,6 +1,5 @@
 name: Build and Deploy Edge AI Firmware
 
-# Tự động chạy khi bạn push code lên nhánh main hoặc bấm chạy thủ công
 on:
   push:
     branches: [ "main" ]
@@ -23,12 +22,11 @@ jobs:
     - name: 3. Tải Model mới nhất từ Edge Impulse
       run: |
         echo "Đang gọi API Edge Impulse để lấy C++ library..."
-        # Tải file và lưu vào model.zip
+        # Đã cập nhật lại endpoint thành /deployment/download cho chuẩn xác nhất
         curl -L -H "x-api-key: ${{ secrets.EI_API_KEY }}" \
              -o model.zip \
-             "https://studio.edgeimpulse.com/v1/api/${{ secrets.EI_PROJECT_ID }}/export/download?type=cplusplus"
+             "https://studio.edgeimpulse.com/v1/api/${{ secrets.EI_PROJECT_ID }}/deployment/download?type=cplusplus"
         
-        # KIỂM TRA LỖI: Nếu file tải về quá nhỏ (dưới 1000 bytes) thì chắc chắn là lỗi API
         FILE_SIZE=$(wc -c < model.zip)
         if [ $FILE_SIZE -lt 1000 ]; then
           echo "----------------------------------------------------------"
@@ -36,17 +34,14 @@ jobs:
           echo "Nội dung phản hồi từ Edge Impulse:"
           cat model.zip
           echo -e "\n----------------------------------------------------------"
-          echo "GỢI Ý: Bạn đã bấm nút 'Build' trong mục 'Deployment' trên Edge Impulse chưa?"
           exit 1
         fi
         
-        # Nếu file hợp lệ, tiến hành giải nén vào thư mục lib
         mkdir -p lib/edge_impulse_model
         unzip -o model.zip -d lib/edge_impulse_model/
         echo "Đã giải nén model thành công."
 
-    - name: 4. Biên dịch Firmware (Giới hạn RAM để tránh Exit Code 9)
-      # Sử dụng -j 2 để giới hạn chạy 2 luồng đồng thời, giúp không bị tràn RAM máy chủ ảo
+    - name: 4. Biên dịch Firmware
       run: pio run -j 2
 
     - name: 5. Đẩy Firmware lên Azure Blob Storage (OTA)
@@ -60,4 +55,3 @@ jobs:
             --file .pio/build/esp32-s3-devkitc-1/firmware.bin \
             --name firmware.bin \
             --overwrite true
-          echo "Hoàn tất! ESP32-S3 của bạn đã có thể tải bản cập nhật mới."
