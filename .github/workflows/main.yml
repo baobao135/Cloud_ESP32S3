@@ -1,5 +1,6 @@
 name: Build and Deploy Edge AI Firmware
 
+# Tự động chạy khi bạn push code lên nhánh main hoặc bấm chạy thủ công
 on:
   push:
     branches: [ "main" ]
@@ -10,35 +11,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Lấy mã nguồn về máy chủ ảo
+    - name: 1. Lấy mã nguồn từ GitHub
       uses: actions/checkout@v3
 
-    - name: Cài đặt Python và PlatformIO Core
+    - name: 2. Cài đặt môi trường Python & PlatformIO
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
     - run: pip install platformio
 
-    - name: Tải Model mới nhất từ Edge Impulse
+    - name: 3. Tải Model mới nhất từ Edge Impulse
       run: |
-        echo "Đang tải C++ library từ Edge Impulse..."
-        curl -H "x-api-key: ${{ secrets.EI_API_KEY }}" \
+        echo "Đang gọi API Edge Impulse để lấy C++ library..."
+        # Tải file và lưu vào model.zip
+        curl -L -H "x-api-key: ${{ secrets.EI_API_KEY }}" \
              -o model.zip \
-             "https://studio.edgeimpulse.com/v1/api/${{ secrets.EI_PROJECT_ID }}/export/download?type=zip"
+             "https://studio.edgeimpulse.com/v1/api/${{ secrets.EI_PROJECT_ID }}/export/download?type=cplusplus"
         
-        # Giải nén thẳng vào thư mục lib của PlatformIO để nó tự động biên dịch
+        # KIỂM TRA LỖI: Nếu file tải về quá nhỏ (dưới 1000 bytes) thì chắc chắn là lỗi API
+        FILE_SIZE=$(wc -c < model.zip)
+        if [ $FILE_SIZE -lt 1000 ]; then
+          echo "----------------------------------------------------------"
+          echo "LỖI CỰC KỲ QUAN TRỌNG: File tải về không phải là file ZIP!"
+          echo "Nội dung phản hồi từ Edge Impulse:"
+          cat model.zip
+          echo -e "\n----------------------------------------------------------"
+          echo "GỢI Ý: Bạn đã bấm nút 'Build' trong mục 'Deployment' trên Edge Impulse chưa?"
+          exit 1
+        fi
+        
+        # Nếu file hợp lệ, tiến hành giải nén vào thư mục lib
+        mkdir -p lib/edge_impulse_model
         unzip -o model.zip -d lib/edge_impulse_model/
+        echo "Đã giải nén model thành công."
 
-    - name: Tiến hành Biên dịch (Build)
-      run: pio run 
+    - name: 4. Biên dịch Firmware (Giới hạn RAM để tránh Exit Code 9)
+      # Sử dụng -j 2 để giới hạn chạy 2 luồng đồng thời, giúp không bị tràn RAM máy chủ ảo
+      run: pio run -j 2
 
-    - name: Đẩy Firmware lên Azure Blob Storage
+    - name: 5. Đẩy Firmware lên Azure Blob Storage (OTA)
       uses: azure/CLI@v1
       with:
         inlineScript: |
+          echo "Đang đẩy file lên Azure..."
           az storage blob upload \
             --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
             --container-name firmware \
             --file .pio/build/esp32-s3-devkitc-1/firmware.bin \
             --name firmware.bin \
             --overwrite true
+          echo "Hoàn tất! ESP32-S3 của bạn đã có thể tải bản cập nhật mới."
